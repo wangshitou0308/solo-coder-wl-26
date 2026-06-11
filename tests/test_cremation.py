@@ -169,3 +169,60 @@ async def test_list_cremations(client: AsyncClient, test_users, test_deceased):
     assert response.status_code == 200
     data = response.json()
     assert len(data) >= 1
+
+
+@pytest.mark.asyncio
+async def test_auto_schedule_rejects_duplicate(client: AsyncClient, test_users, test_deceased):
+    headers = await get_auth_header(client, "cremation_op")
+
+    create_response = await client.post(
+        "/api/v1/cremation",
+        headers=headers,
+        json={
+            "deceased_id": test_deceased.id,
+            "cremation_fee": 1500
+        }
+    )
+    assert create_response.status_code == 200
+
+    auto_response = await client.post(
+        f"/api/v1/cremation/auto-schedule/{test_deceased.id}",
+        headers=headers
+    )
+    assert auto_response.status_code == 400
+    assert "已在火化队列中" in auto_response.json()["detail"]
+
+    headers_director = await get_auth_header(client, "director")
+    await client.post(
+        f"/api/v1/deceased/{test_deceased.id}/archive",
+        headers=headers_director,
+        json={"archived": True}
+    )
+
+    another_deceased_resp = await client.post(
+        "/api/v1/deceased",
+        headers=await get_auth_header(client, "hall_admin"),
+        json={
+            "name": "归档测试逝者",
+            "gender": "女",
+            "birth_date": "1940-05-05",
+            "death_date": "2024-06-01",
+            "id_card": "310101194005051234",
+            "address": "测试地址B",
+            "death_place": "测试地点B",
+            "family_relations": []
+        }
+    )
+    if another_deceased_resp.status_code == 200:
+        archived_id = another_deceased_resp.json()["id"]
+        await client.post(
+            f"/api/v1/deceased/{archived_id}/archive",
+            headers=headers_director,
+            json={"archived": True}
+        )
+        archived_auto = await client.post(
+            f"/api/v1/cremation/auto-schedule/{archived_id}",
+            headers=headers
+        )
+        assert archived_auto.status_code == 400
+        assert "已归档" in archived_auto.json()["detail"]

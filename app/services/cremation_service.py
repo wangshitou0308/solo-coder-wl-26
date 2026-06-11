@@ -119,6 +119,25 @@ async def create_cremation(
 
 
 async def auto_schedule_cremation(db: AsyncSession, deceased_id: int):
+    deceased = await get_deceased_by_id(db, deceased_id)
+    if deceased.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该逝者档案已归档，无法安排火化"
+        )
+
+    existing = await db.execute(
+        select(CremationQueue).where(
+            CremationQueue.deceased_id == deceased_id,
+            CremationQueue.status != CremationStatus.CANCELLED
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该逝者已在火化队列中"
+        )
+
     existing_farewell = await db.execute(
         select(FarewellBooking)
         .where(
@@ -160,7 +179,7 @@ async def auto_schedule_cremation(db: AsyncSession, deceased_id: int):
     await recalculate_queue_positions(db)
     await db.commit()
     await db.refresh(cremation)
-    return cremation
+    return await get_cremation_by_id(db, cremation.id)
 
 
 async def update_cremation(

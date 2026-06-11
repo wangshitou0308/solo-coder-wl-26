@@ -260,3 +260,51 @@ async def test_list_bills(client: AsyncClient, test_users, test_deceased):
     assert response.status_code == 200
     data = response.json()
     assert len(data) >= 1
+
+
+@pytest.mark.asyncio
+async def test_negative_payment_rejected(client: AsyncClient, test_users, test_deceased):
+    headers = await get_auth_header(client, "finance")
+
+    create_response = await client.post(
+        "/api/v1/billing",
+        headers=headers,
+        json={
+            "deceased_id": test_deceased.id,
+            "fee_items": [
+                {
+                    "fee_type": "transport",
+                    "item_name": "遗体接运费",
+                    "quantity": 1,
+                    "unit_price": 800
+                }
+            ]
+        }
+    )
+    bill_id = create_response.json()["id"]
+
+    response = await client.post(
+        "/api/v1/billing/pay",
+        headers=headers,
+        json={
+            "bill_id": bill_id,
+            "amount": -100,
+            "payment_method": "cash"
+        }
+    )
+    assert response.status_code == 422
+
+    zero_response = await client.post(
+        "/api/v1/billing/pay",
+        headers=headers,
+        json={
+            "bill_id": bill_id,
+            "amount": 0,
+            "payment_method": "cash"
+        }
+    )
+    assert zero_response.status_code == 422
+
+    bill_response = await client.get(f"/api/v1/billing/{bill_id}", headers=headers)
+    bill_data = bill_response.json()
+    assert bill_data["paid_amount"] == 0

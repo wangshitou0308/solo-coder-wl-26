@@ -86,7 +86,7 @@ class BillResponse(BaseModel):
 
 class PaymentReceipt(BaseModel):
     bill_id: int
-    amount: float
+    amount: float = Field(..., gt=0)
     payment_method: PaymentMethod
     fee_item_id: Optional[int] = None
     remark: Optional[str] = None
